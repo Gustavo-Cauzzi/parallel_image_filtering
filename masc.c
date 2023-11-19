@@ -75,7 +75,7 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	int i, j;
 	short media;
 	RGB pixel;
-	RGB* pixels = (RGB*) malloc(sizeof(RGB) * cabecalho.largura * cabecalho.altura);
+	RGB* pixels = malloc(sizeof(RGB) * cabecalho.largura * cabecalho.altura);
 	// RGB* pixels[400 * 600];
 
 	printf("apply_mask\n");
@@ -92,27 +92,41 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	if (ali != 0) ali = 4 - ali;
 	printf("%d\n\n", (int) ((cabecalho.largura * cabecalho.altura)/sizeof(RGB)));
 
-    fread(&pixels, sizeof(RGB), cabecalho.largura * cabecalho.altura, fin);
+    // fread(&pixels, sizeof(RGB), cabecalho.largura * cabecalho.altura, fin);
 
-	// for(i=0; i<cabecalho.altura; i++){
-	// 	for(j=0; j<cabecalho.largura; j++){
-	// 		fread(&pixel, sizeof(RGB), 1, fin);
-	// 		int pos = i * cabecalho.largura + j;
-	// 		// printf("%d - ", pos);
-	// 		RGB memPix = pixels[pos];
-	// 		memPix.blue = pixel.blue;
-	// 		memPix.green = pixel.green;
-	// 		memPix.red = pixel.red;
-	// 		pixels[i * cabecalho.largura + j] = memPix;
-	// 	} 
-
-	// 	for(j=0; j<ali; j++){
-	// 		fread(&aux, sizeof(unsigned char), 1, fin);
-	// 	}
-	// }
 	for(i=0; i<cabecalho.altura; i++){
 		for(j=0; j<cabecalho.largura; j++){
-			printf("asdbui %d\n", i * cabecalho.largura + j);
+			printf("a");
+			fread(&pixel, sizeof(RGB), 1, fin);
+			printf("b");
+			int pos = i * cabecalho.largura + j;
+			printf(" |%d %d %d %d| \n", pos, pixel.red, pixel.green, pixel.blue);
+			printf("i");
+			fflush(stdout);
+			RGB memPix = pixels[pos];
+			printf("u");
+			fflush(stdout);
+			memPix.blue = pixel.blue;
+			memPix.green = pixel.green;
+			memPix.red = pixel.red;
+			printf("p");
+			fflush(stdout);
+			pixels[i * cabecalho.largura + j] = memPix;
+			printf("c");
+			fflush(stdout);
+		} 
+
+		for(j=0; j<ali; j++){
+			printf("d");
+			fflush(stdout);
+			fread(&aux, sizeof(unsigned char), 1, fin);
+			fflush(stdout);
+			printf("e");
+		}
+	}
+	for(i=0; i<cabecalho.altura; i++){
+		for(j=0; j<cabecalho.largura; j++){
+			printf("asdbui %d %d\n", i * cabecalho.largura + j, pixels);
 			printf("RGB %d %d %d \n", pixels[i * cabecalho.largura + j].red, pixels[i * cabecalho.largura + j].green, pixels[i * cabecalho.largura + j].blue);
 		}
 	}
