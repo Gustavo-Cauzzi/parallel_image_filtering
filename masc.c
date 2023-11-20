@@ -53,8 +53,8 @@ void grayscale (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	int ali = (cabecalho.largura * 3) % 4;
 	if (ali != 0) ali = 4 - ali;
 	
-	for(i=0; i<cabecalho.altura; i++){
-		for(j=0; j<cabecalho.largura; j++){
+	for(i = 0; i < cabecalho.altura; i++){
+		for(j = 0; j < cabecalho.largura; j++){
 			fread(&pixel, sizeof(RGB), 1, fin);
 			media = (pixel.red + pixel.green + pixel.blue) / 3;
 			pixel.red = media;
@@ -63,7 +63,7 @@ void grayscale (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 			fwrite(&pixel, sizeof(RGB), 1, fout);
 		}
 
-		for(j=0; j<ali; j++){
+		for(j = 0; j<ali; j++){
 			fread(&aux, sizeof(unsigned char), 1, fin);
 			fwrite(&aux, sizeof(unsigned char), 1, fout);
 		}
@@ -72,11 +72,9 @@ void grayscale (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 /*---------------------------------------------------------------------*/
 void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	char aux;
-	int i, j;
+	int i, j, k;
 	short media;
 	RGB pixel;
-	RGB* pixels = (RGB*) malloc(sizeof(RGB) * cabecalho.largura * cabecalho.altura);
-	// RGB* pixels[400 * 600];
 
 	printf("apply_mask\n");
 	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
@@ -92,39 +90,34 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	if (ali != 0) ali = 4 - ali;
 	printf("%d\n\n", (int) ((cabecalho.largura * cabecalho.altura)/sizeof(RGB)));
 
-    fread(&pixels, sizeof(RGB), cabecalho.largura * cabecalho.altura, fin);
+	RGB** pixels = malloc(sizeof(RGB*) * cabecalho.altura);
+	for(i = 0; i < cabecalho.altura; i++){
+		pixels[i] = malloc(sizeof(RGB) * cabecalho.largura);
+	}
 
-	// for(i=0; i<cabecalho.altura; i++){
-	// 	for(j=0; j<cabecalho.largura; j++){
-	// 		fread(&pixel, sizeof(RGB), 1, fin);
-	// 		int pos = i * cabecalho.largura + j;
-	// 		// printf("%d - ", pos);
-	// 		RGB memPix = pixels[pos];
-	// 		memPix.blue = pixel.blue;
-	// 		memPix.green = pixel.green;
-	// 		memPix.red = pixel.red;
-	// 		pixels[i * cabecalho.largura + j] = memPix;
-	// 	} 
+	for(i = 0; i < cabecalho.altura; i++){
+		for(j = 0; j < cabecalho.largura; j++){
+			fread(&pixel, sizeof(RGB), 1, fin);
+			RGB memPix = pixels[i][j];
+			memPix.blue = pixel.blue;
+			memPix.green = pixel.green;
+			memPix.red = pixel.red;
+			pixels[i][j] = memPix;
+		} 
 
-	// 	for(j=0; j<ali; j++){
-	// 		fread(&aux, sizeof(unsigned char), 1, fin);
-	// 	}
-	// }
-	for(i=0; i<cabecalho.altura; i++){
-		for(j=0; j<cabecalho.largura; j++){
-			printf("asdbui %d\n", i * cabecalho.largura + j);
-			printf("RGB %d %d %d \n", pixels[i * cabecalho.largura + j].red, pixels[i * cabecalho.largura + j].green, pixels[i * cabecalho.largura + j].blue);
+		for(j = 0; j<ali; j++){
+			fread(&aux, sizeof(unsigned char), 1, fin);
 		}
 	}
 
 	printf("\n\nAplicando filtro\n\n");
-	int maskX[3][3] = { {-1, 0, 1}, {-1, 0, 1}, {-1, 0, 1}};
+	int maskX[3][3] = {{-1, 0, 1}, {-1, 0, 1}, {-1, 0, 1}};
 	int maskY[3][3] = {{-1, -1, -1}, { 0,  0,  0}, { 1,  1,  1}};
 
-	for(i=0; i<cabecalho.altura; i++){
-		for(j=0; j<cabecalho.largura; j++){
+	for(i = 0; i < cabecalho.altura; i++){
+		for(j = 0; j < cabecalho.largura; j++){
 			int x, y;
-			int sumX, sumY;
+			int sumX = 0, sumY = 0;
 
 			for (y = -1; y <= 1; y++) {
 				for (x = -1; x <= 1; x++) {
@@ -135,37 +128,27 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 						yPosToCalc < 0 || yPosToCalc >= cabecalho.altura
 						|| xPosToCalc < 0 || xPosToCalc >= cabecalho.largura
 					) continue;
-					int posToCalc = yPosToCalc * cabecalho.largura + xPosToCalc;
-					// printf("%d %d - %d %d r%d |", j, i, xPosToCalc, yPosToCalc, pixels[posToCalc].red);
-					sumX += pixels[posToCalc].red * maskX[y][x];
-                    sumY += pixels[posToCalc].red * maskY[y][x];
+					// printf("%d | ", pixels[yPosToCalc][xPosToCalc].red);
+					sumX += pixels[yPosToCalc][xPosToCalc].red * maskX[y + 1][x + 1];
+                    sumY += pixels[yPosToCalc][xPosToCalc].red * maskY[y + 1][x + 1];
 				}
 			}
 
 			int colorValue = (int) sqrt(sumX * sumX + sumY * sumY);
-			// printf("n%d %d =Novo: %d", sumX, sumY, colorValue);
-			int pos = i * cabecalho.largura + j;
 			colorValue = min(colorValue, 255);
-			RGB pixel = pixels[pos];
+			RGB pixel;
 			pixel.blue = colorValue;
 			pixel.green = colorValue;
 			pixel.red = colorValue;
-			pixels[pos] = pixel;
-			// printf(" ==========\n");
+			fwrite(&pixel, sizeof(RGB), 1, fout);
+			for(k = 0; k < ali; k++){
+				fwrite(&aux, sizeof(unsigned char), 1, fout);
+			}
 		}
 	}
 
-	
-	printf("\n\n\n\nSalvando\n\n\n\n");
-	for(i=0; i<cabecalho.altura; i++){
-		for(j=0; j<cabecalho.largura; j++){
-			RGB memPix = pixels[i * cabecalho.largura + j];
-			// printf("%d %d %d | ", memPix.red, memPix.green, memPix.blue);
-			fwrite(&memPix, sizeof(RGB), 1, fout);
-		}
-		for(j=0; j<ali; j++){
-			fwrite(&aux, sizeof(unsigned char), 1, fout);
-		}
+	for(i = 0; i < cabecalho.altura; i++){
+		free(pixels[i]);
 	}
 	free(pixels);
 
