@@ -3,8 +3,8 @@
 #include <omp.h>
 #include <math.h>
 
-// gcc ./masc.c -o ./masc -fopenmp -lm
-// time ./masc ./borboleta.bmp  ./out.bmp
+// gcc ./mascSync.c -o ./mascSync -lm
+// time ./mascSync ./borboleta.bmp  ./out.bmp
 
 /*---------------------------------------------------------------------*/
 #pragma pack(1)
@@ -45,6 +45,12 @@ void grayscale (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 
 
 	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
+
+	printf("Tamanho da imagem: %u\n", cabecalho.tamanho_arquivo);
+	printf("Largura: %d\n", cabecalho.largura);
+	printf("Largura: %d\n", cabecalho.altura);
+	printf("Bits por pixel: %d\n", cabecalho.bits_por_pixel);
+
 	fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
 
 	int ali = (cabecalho.largura * 3) % 4;
@@ -73,19 +79,23 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	short media;
 	RGB pixel;
 
+	printf("apply_mask\n");
 	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
+
+	printf("Tamanho da imagem: %u\n", cabecalho.tamanho_arquivo);
+	printf("Largura: %d\n", cabecalho.largura);
+	printf("Largura: %d\n", cabecalho.altura);
+	printf("Bits por pixel: %d\n", cabecalho.bits_por_pixel);
+
 	fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
 
 	int ali = (cabecalho.largura * 3) % 4;
 	if (ali != 0) ali = 4 - ali;
+	printf("%d\n\n", (int) ((cabecalho.largura * cabecalho.altura)/sizeof(RGB)));
 
 	RGB** pixels = malloc(sizeof(RGB*) * cabecalho.altura);
 	for(i = 0; i < cabecalho.altura; i++){
 		pixels[i] = malloc(sizeof(RGB) * cabecalho.largura);
-	}
-	RGB** pixelsToSave = malloc(sizeof(RGB*) * cabecalho.altura);
-	for(i = 0; i < cabecalho.altura; i++){
-		pixelsToSave[i] = malloc(sizeof(RGB) * cabecalho.largura);
 	}
 
 	for(i = 0; i < cabecalho.altura; i++){
@@ -99,10 +109,10 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 		}
 	}
 
+	printf("\n\nAplicando filtro\n\n");
 	int maskX[3][3] = {{-1, 0, 1}, {-1, 0, 1}, {-1, 0, 1}};
 	int maskY[3][3] = {{-1, -1, -1}, { 0,  0,  0}, { 1,  1,  1}};
 
-	#pragma omp parallel for private(j)
 	for(i = 0; i < cabecalho.altura; i++){
 		for(j = 0; j < cabecalho.largura; j++){
 			int x, y;
@@ -117,6 +127,7 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 						yPosToCalc < 0 || yPosToCalc >= cabecalho.altura
 						|| xPosToCalc < 0 || xPosToCalc >= cabecalho.largura
 					) continue;
+					// printf("%d | ", pixels[yPosToCalc][xPosToCalc].red);
 					sumX += pixels[yPosToCalc][xPosToCalc].red * maskX[y + 1][x + 1];
                     sumY += pixels[yPosToCalc][xPosToCalc].red * maskY[y + 1][x + 1];
 				}
@@ -128,14 +139,7 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 			pixel.blue = colorValue;
 			pixel.green = colorValue;
 			pixel.red = colorValue;
-			pixelsToSave[i][j] = pixel;
-		}
-	}
-
-	for(i = 0; i < cabecalho.altura; i++){
-		for(j = 0; j < cabecalho.largura; j++){
-			RGB pixel2 = pixelsToSave[i][j];
-			fwrite(&pixel2, sizeof(RGB), 1, fout);
+			fwrite(&pixel, sizeof(RGB), 1, fout);
 			for(k = 0; k < ali; k++){
 				fwrite(&aux, sizeof(unsigned char), 1, fout);
 			}
@@ -144,10 +148,8 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 
 	for(i = 0; i < cabecalho.altura; i++){
 		free(pixels[i]);
-		free(pixelsToSave[i]);
 	}
 	free(pixels);
-	free(pixelsToSave);
 
 }
 /*---------------------------------------------------------------------*/
@@ -155,39 +157,26 @@ int main(int argc, char **argv ){
 
 	char entrada[100], saida[100];
 	CABECALHO cabecalho;
-	FILE *fgray;
 
-    if (argc < 3) {
-        printf("%s <caminho_arquivo_entrada> <caminho_arquivo_saida> [<0_1_skip_grayscale>]\n", argv[0]);
+    if (argc != 3) {
+        printf("%s <caminho_arquivo_entrada> <caminho_arquivo_saida>\n", argv[0]);
         exit(0);
     }
 
 
-	int skipGrayScale = 0;
-	if (argc == 4) {
-		skipGrayScale = atoi(argv[3]);
-	}
+	FILE *fin = fopen(argv[1], "rb");
 
-	if (skipGrayScale == 0) {
-		FILE *fin = fopen(argv[1], "rb");
+	if ( fin == NULL ){
+		printf("Erro ao abrir o arquivo %s\n", argv[1]);
+		exit(0);
+	}  
 
-		if ( fin == NULL ){
-			printf("Erro ao abrir o arquivo %s\n", argv[1]);
-			exit(0);
-		}  
+	FILE *fgray = fopen("./gray.bmp", "wb");
 
-		fgray = fopen("./gray.bmp", "wb");
-
-		if ( fgray == NULL ){
-			printf("Erro ao abrir o arquivo %s\n", argv[2]);
-			exit(0);
-		}  
-
-		grayscale(cabecalho, fin, fgray);
-
-		fclose(fgray);
-		fclose(fin);
-	}
+	if ( fgray == NULL ){
+		printf("Erro ao abrir o arquivo %s\n", argv[2]);
+		exit(0);
+	}  
 
 	FILE *fout = fopen(argv[2], "wb");
 
@@ -195,16 +184,16 @@ int main(int argc, char **argv ){
 		printf("Erro ao abrir o arquivo %s\n", argv[2]);
 		exit(0);
 	}  
-	
+
+	grayscale(cabecalho, fin, fgray);
+
+	fclose(fgray);
 	fgray = fopen("./gray.bmp", "rb");
-	if ( fgray == NULL ){
-		printf("Erro ao abrir o arquivo %s\n", argv[2]);
-		exit(0);
-	}  
 
 	apply_mask(cabecalho, fgray, fout);
 
 	fclose(fgray);
+	fclose(fin);
 	fclose(fout);
 }
 /*---------------------------------------------------------------------*/
