@@ -131,7 +131,6 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 /*---------------------------------------------------------------------*/
 int main(int argc, char **argv ){
 
-	char entrada[100], saida[100];
 	CABECALHO cabecalho;
 	FILE *fgray;
 

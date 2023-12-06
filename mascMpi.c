@@ -3,8 +3,8 @@
 #include <mpi.h>
 #include <math.h>
 
-// gcc ./masc.c -o ./masc -fopenmp -lm
-// time ./masc ./borboleta.bmp  ./out.bmp
+// mpicc ./mascMpi.c -o mascMpi -lm
+// time mpirun -np 3 ./mascMpi ./borboleta.bmp ./outMpi.bmp
 
 /*---------------------------------------------------------------------*/
 #pragma pack(1)
@@ -48,12 +48,15 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout, int id, int np) {
 
 	int ali = (cabecalho.largura * 3) % 4;
 	if (ali != 0) ali = 4 - ali;
+	int blockHeight = cabecalho.altura / np;
 
 	short* pixels = malloc(sizeof(short) * cabecalho.altura * cabecalho.largura);
- 	RGB* pixelsToSave;
+ 	short* pixelsBuffer = malloc(sizeof(short) * blockHeight * cabecalho.largura);
+ 	short* pixelsToSave = NULL;
 
+	double ti = MPI_Wtime();
 	if (id == 0) {
-		pixelsToSave = malloc(sizeof(RGB) * cabecalho.altura * cabecalho.largura);
+		pixelsToSave = malloc(sizeof(short) * cabecalho.altura * cabecalho.largura);
 		for(i = 0; i < cabecalho.altura; i++){
 			for(j = 0; j < cabecalho.largura; j++){
 				fread(&pixel, sizeof(RGB), 1, fin);
@@ -66,17 +69,13 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout, int id, int np) {
 			}
 		}
 	}
+		
 
-	MPI_Bcast(pixels, cabecalho.altura * cabecalho.largura, MPI_FLOAT,0,MPI_COMM_WORLD);
-
-	for (i = 0; i < 20; i++) {
-		printf("(%d %d) ", id, pixels[i]);
-	}
+	MPI_Bcast(pixels, cabecalho.altura * cabecalho.largura, MPI_SHORT,0,MPI_COMM_WORLD);
 
 	int maskX[3][3] = {{-1, 0, 1}, {-1, 0, 1}, {-1, 0, 1}};
 	int maskY[3][3] = {{-1, -1, -1}, { 0,  0,  0}, { 1,  1,  1}};
-
-	for(i = 0; i < cabecalho.altura; i++){
+	for(i = 0; i < blockHeight; i++){
 		for(j = 0; j < cabecalho.largura; j++){
 			int x, y;
 			int sumX = 0, sumY = 0;
@@ -87,37 +86,62 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout, int id, int np) {
 					int yPosToCalc = i + y;
 
 					if (
-						yPosToCalc < 0 || yPosToCalc >= cabecalho.altura
+						(id == 0 && yPosToCalc < 0) 
+						|| (id == np - 1 && yPosToCalc >= cabecalho.altura)
 						|| xPosToCalc < 0 || xPosToCalc >= cabecalho.largura
 					) continue;
-					sumX += pixels[yPosToCalc * cabecalho.largura + xPosToCalc] * maskX[y + 1][x + 1];
-                    sumY += pixels[yPosToCalc * cabecalho.largura + xPosToCalc] * maskY[y + 1][x + 1];
+
+					sumX += pixels[(blockHeight * id + yPosToCalc) * cabecalho.largura + xPosToCalc] * maskX[y + 1][x + 1];
+                    sumY += pixels[(blockHeight * id + yPosToCalc) * cabecalho.largura + xPosToCalc] * maskY[y + 1][x + 1];
 				}
 			}
 
-			int colorValue = (int) sqrt(sumX * sumX + sumY * sumY);
-			colorValue = min(colorValue, 255);
-			RGB pixel;
-			pixel.blue = colorValue;
-			pixel.green = colorValue;
-			pixel.red = colorValue;
-			pixelsToSave[i * cabecalho.largura + j] = pixel;
+			if (i == 0 || i == blockHeight - 1) {
+				float mediaY = sumY / 3;
+				sumY += mediaY * -3;
+			}
+			if (j == 0 || j == cabecalho.largura - 1) {
+				float mediaX = sumX / 3;
+				sumX += mediaX * -3;
+			}
+
+			int colorValueRaw = (int) sqrt(sumX * sumX + sumY * sumY);
+			short colorValue = (short) min(colorValueRaw, 255);
+			pixelsBuffer[i * cabecalho.largura + j] = colorValue;
 		}
 	}
 
-	for(i = 0; i < cabecalho.altura; i++){
-		for(j = 0; j < cabecalho.largura; j++){
-			RGB pixel2 = pixelsToSave[i * cabecalho.largura + j];
-			fwrite(&pixel2, sizeof(RGB), 1, fout);
-			for(k = 0; k < ali; k++){
-				fwrite(&aux, sizeof(unsigned char), 1, fout);
+	MPI_Gather(pixelsBuffer, blockHeight * cabecalho.largura, MPI_SHORT, 
+				pixelsToSave, blockHeight * cabecalho.largura, MPI_SHORT, 0, MPI_COMM_WORLD);
+
+	double tf = MPI_Wtime();
+
+	if (id == 0) {
+		printf("Time: %lf\n", tf - ti);
+		for(i = 0; i < cabecalho.altura; i++){
+			for(j = 0; j < cabecalho.largura; j++){
+				short color = pixelsToSave[i * cabecalho.largura + j];
+				RGB pixel;
+				pixel.blue = color;
+				pixel.green = color;
+				pixel.red = color;
+				fwrite(&pixel, sizeof(RGB), 1, fout);
+				for(k = 0; k < ali; k++){
+					fwrite(&aux, sizeof(unsigned char), 1, fout);
+				}
 			}
 		}
 	}
 	
 	free(pixels);
+	free(pixelsBuffer);
 	free(pixelsToSave);
 
+}
+/*---------------------------------------------------------------------*/
+void stop_process () {
+	MPI_Finalize();
+	exit(0);
 }
 /*---------------------------------------------------------------------*/
 int main(int argc, char **argv ){
@@ -128,15 +152,13 @@ int main(int argc, char **argv ){
 	FILE *fgray;
 
 
-	printf("Ewaidniwon\n");
 	MPI_Init(&argc, &argv);
 	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 	MPI_Comm_size(MPI_COMM_WORLD, &np);	
 
     if (id == 0 && argc < 2) {
         printf("%s <caminho_arquivo_entrada> <caminho_arquivo_saida>\n", argv[0]);
-		MPI_Finalize();
-        exit(0);
+		stop_process();
     }
 
 	FILE *fin = fopen(argv[1], "rb");
@@ -145,21 +167,21 @@ int main(int argc, char **argv ){
 	if (id == 0) {
 		if ( fin == NULL ){
 			printf("Erro ao abrir o arquivo %s\n", argv[1]);
-			exit(0);
+			stop_process();
 		}  
 
 		if ( fout == NULL ){
 			printf("Erro ao abrir o arquivo %s\n", argv[2]);
-			exit(0);
+			stop_process();
 		}  
 	}
 	
-	// printf("daoapmsda %d %ld\n", id, fin);
 	apply_mask(cabecalho, fin, fout, id, np);
-	MPI_Finalize();
-
 
 	fclose(fin);
 	fclose(fout);
+
+	MPI_Finalize();
+
 }
 /*---------------------------------------------------------------------*/
