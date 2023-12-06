@@ -36,36 +36,6 @@ struct rgb{
 	unsigned char red;
 };
 typedef struct rgb RGB;
-
-void grayscale (CABECALHO cabecalho, FILE *fin, FILE *fout) {
-	char aux;
-	int i, j;
-	short media;
-	RGB pixel;
-
-
-	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
-	fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
-
-	int ali = (cabecalho.largura * 3) % 4;
-	if (ali != 0) ali = 4 - ali;
-	
-	for(i = 0; i < cabecalho.altura; i++){
-		for(j = 0; j < cabecalho.largura; j++){
-			fread(&pixel, sizeof(RGB), 1, fin);
-			media = (pixel.red + pixel.green + pixel.blue) / 3;
-			pixel.red = media;
-			pixel.green = media;
-			pixel.blue = media;
-			fwrite(&pixel, sizeof(RGB), 1, fout);
-		}
-
-		for(j = 0; j<ali; j++){
-			fread(&aux, sizeof(unsigned char), 1, fin);
-			fwrite(&aux, sizeof(unsigned char), 1, fout);
-		}
-	}
-}
 /*---------------------------------------------------------------------*/
 void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 	char aux;
@@ -88,9 +58,14 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 		pixelsToSave[i] = malloc(sizeof(RGB) * cabecalho.largura);
 	}
 
+	double t1 = omp_get_wtime();
 	for(i = 0; i < cabecalho.altura; i++){
 		for(j = 0; j < cabecalho.largura; j++){
 			fread(&pixel, sizeof(RGB), 1, fin);
+			media = (pixel.red + pixel.green + pixel.blue) / 3;
+			pixel.red = media;
+			pixel.green = media;
+			pixel.blue = media;
 			pixels[i][j] = pixel;
 		} 
 
@@ -131,6 +106,9 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 			pixelsToSave[i][j] = pixel;
 		}
 	}
+	double t2 = omp_get_wtime();
+
+	printf("Tempo %lf", t2 - t1);
 
 	for(i = 0; i < cabecalho.altura; i++){
 		for(j = 0; j < cabecalho.largura; j++){
@@ -153,58 +131,35 @@ void apply_mask (CABECALHO cabecalho, FILE *fin, FILE *fout) {
 /*---------------------------------------------------------------------*/
 int main(int argc, char **argv ){
 
-	char entrada[100], saida[100];
 	CABECALHO cabecalho;
 	FILE *fgray;
 
     if (argc < 3) {
-        printf("%s <caminho_arquivo_entrada> <caminho_arquivo_saida> [<0_1_skip_grayscale>]\n", argv[0]);
+        printf("%s <caminho_arquivo_entrada> <caminho_arquivo_saida> [<n_threads>]\n", argv[0]);
         exit(0);
     }
 
-
-	int skipGrayScale = 0;
 	if (argc == 4) {
-		skipGrayScale = atoi(argv[3]);
+		int nThreads = atoi(argv[3]);
+		omp_set_num_threads(nThreads);
 	}
 
-	if (skipGrayScale == 0) {
-		FILE *fin = fopen(argv[1], "rb");
-
-		if ( fin == NULL ){
-			printf("Erro ao abrir o arquivo %s\n", argv[1]);
-			exit(0);
-		}  
-
-		fgray = fopen("./gray.bmp", "wb");
-
-		if ( fgray == NULL ){
-			printf("Erro ao abrir o arquivo %s\n", argv[2]);
-			exit(0);
-		}  
-
-		grayscale(cabecalho, fin, fgray);
-
-		fclose(fgray);
-		fclose(fin);
-	}
-
+	FILE *fin = fopen(argv[1], "rb");
 	FILE *fout = fopen(argv[2], "wb");
+
+	if ( fin == NULL ){
+		printf("Erro ao abrir o arquivo %s\n", argv[1]);
+		exit(0);
+	}  
 
 	if ( fout == NULL ){
 		printf("Erro ao abrir o arquivo %s\n", argv[2]);
 		exit(0);
 	}  
 	
-	fgray = fopen("./gray.bmp", "rb");
-	if ( fgray == NULL ){
-		printf("Erro ao abrir o arquivo %s\n", argv[2]);
-		exit(0);
-	}  
+	apply_mask(cabecalho, fin, fout);
 
-	apply_mask(cabecalho, fgray, fout);
-
-	fclose(fgray);
+	fclose(fin);
 	fclose(fout);
 }
 /*---------------------------------------------------------------------*/
